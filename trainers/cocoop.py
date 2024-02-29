@@ -119,7 +119,7 @@ class PromptLearner(nn.Module):
         self.n_ctx = n_ctx
         self.tokenized_prompts = tokenized_prompts  # torch.Tensor
         self.name_lens = name_lens
-    
+
     def construct_prompts(self, ctx, prefix, suffix, label=None):
         # dim0 is either batch_size (during training) or n_cls (during testing)
         # ctx: context tokens, with shape of (dim0, n_ctx, ctx_dim)
@@ -144,16 +144,33 @@ class PromptLearner(nn.Module):
     def forward(self, im_features):
         prefix = self.token_prefix
         suffix = self.token_suffix
-        ctx = self.ctx                     # (n_ctx, ctx_dim)
+        ctx = self.ctx  # (n_ctx, ctx_dim)
+        
+        # 假设n_ctx是上下文向量的总数，这里我们取出前4个不加偏置
+        n_ctx_without_bias = 2  # 前4个上下文向量不加偏置
+        ctx_without_bias = ctx[:n_ctx_without_bias]  # (n_ctx_without_bias, ctx_dim)
+        
+        # 计算剩余上下文向量的数量
+        n_ctx_with_bias = ctx.shape[0] - n_ctx_without_bias
+        ctx_with_bias = ctx[n_ctx_without_bias:]  # (n_ctx_with_bias, ctx_dim)
+        
+        # 生成条件化的上下文向量
         bias = self.meta_net(im_features)  # (batch, ctx_dim)
-        bias = bias.unsqueeze(1)           # (batch, 1, ctx_dim)
-        ctx = ctx.unsqueeze(0)             # (1, n_ctx, ctx_dim)
-        ctx_shifted = ctx + bias           # (batch, n_ctx, ctx_dim)
+        bias = bias.unsqueeze(1)  # (batch, 1, ctx_dim)
+        
+        # 为剩余的上下文向量添加偏置
+        ctx_with_bias_shifted = ctx_with_bias + bias  # (batch, n_ctx_with_bias, ctx_dim)
+        
+        # 为了拼接，我们需要确保ctx_without_bias的形状与ctx_with_bias_shifted一致
+        ctx_without_bias_expanded = ctx_without_bias.unsqueeze(0).expand(ctx_with_bias_shifted.size(0), -1, -1)  # (batch, n_ctx_without_bias, ctx_dim)
+        
+        # 拼接上下文向量
+        ctx_combined = torch.cat([ctx_without_bias_expanded, ctx_with_bias_shifted], dim=1)  # (batch, n_ctx, ctx_dim)
         
         # Use instance-conditioned context tokens for all classes
         prompts = []
-        for ctx_shifted_i in ctx_shifted:
-            ctx_i = ctx_shifted_i.unsqueeze(0).expand(self.n_cls, -1, -1)
+        for ctx_combined_i in ctx_combined:
+            ctx_i = ctx_combined_i.unsqueeze(0).expand(self.n_cls, -1, -1)
             pts_i = self.construct_prompts(ctx_i, prefix, suffix)  # (n_cls, n_tkn, ctx_dim)
             prompts.append(pts_i)
         prompts = torch.stack(prompts)
