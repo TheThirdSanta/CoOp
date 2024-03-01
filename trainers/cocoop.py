@@ -72,6 +72,7 @@ class PromptLearner(nn.Module):
         cfg_imsize = cfg.INPUT.SIZE[0]
         assert cfg_imsize == clip_imsize, f"cfg_imsize ({cfg_imsize}) must equal to clip_imsize ({clip_imsize})"
 
+        # 假如这里设置了初始化上下文向量，那么n_ctx就是初始化上下文向量的长度，默认是“a photo of a” 
         if ctx_init:
             # use given words to initialize context vectors
             ctx_init = ctx_init.replace("_", " ")
@@ -146,8 +147,8 @@ class PromptLearner(nn.Module):
         suffix = self.token_suffix
         ctx = self.ctx  # (n_ctx, ctx_dim)
         
-        # 假设n_ctx是上下文向量的总数，这里我们取出前4个不加偏置
-        n_ctx_without_bias = 2  # 前4个上下文向量不加偏置
+        # 假设n_ctx是上下文向量的总数，这里我们取出前n个不加偏置
+        n_ctx_without_bias = 2  # 前n个上下文向量不加偏置
         ctx_without_bias = ctx[:n_ctx_without_bias]  # (n_ctx_without_bias, ctx_dim)
         
         # 计算剩余上下文向量的数量
